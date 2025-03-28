@@ -474,7 +474,11 @@ def main(args):
         evaluate(model, data, start_epoch, args, tb_writer=writer, tokenizer=tokenizer)
         return
 
-    loss = create_loss(args)
+    # NOTE(ebenj): This assumes that the text encoder has an `.output_dim` which is the actual embedding
+    # dimension, and matches the visual encoder. This is true for Marqo and seems decently safe in general
+    output_emb_dim = model.text.output_dim
+    logging.info(f"Inferred model output embedding dim of: {output_emb_dim}")
+    loss = create_loss(args, output_emb_dim)
 
     for epoch in range(start_epoch, args.epochs):
         if is_master(args):
