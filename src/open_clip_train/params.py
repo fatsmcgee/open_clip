@@ -470,6 +470,12 @@ def parse_args(args):
         help='Use SigLip (sigmoid) loss.'
     )
     parser.add_argument(
+        '--matryoshka-dims',
+        default=None,
+        type=str,
+        help='CSV of matryohskha dimensions, e.g "64,128,512"',
+    )
+    parser.add_argument(
         "--loss-dist-impl",
         default=None,
         type=str,
