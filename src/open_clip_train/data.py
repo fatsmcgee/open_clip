@@ -5,6 +5,8 @@ import math
 import os
 import random
 import sys
+from functools import partial
+
 import braceexpand
 from dataclasses import dataclass
 from multiprocessing import Value
@@ -324,6 +326,8 @@ class ResampledShards2(IterableDataset):
             else:
                 yield dict(url=self.rng.choices(self.urls, weights=self.weights, k=1)[0])
 
+def process_text(text, tokenizer):
+    return tokenizer(text)[0]
 
 def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokenizer=None):
     input_shards = args.train_data if is_train else args.val_data
@@ -390,7 +394,7 @@ def get_wds_dataset(args, preprocess_img, is_train, epoch=0, floor=False, tokeni
         wds.select(filter_no_caption_or_no_image),
         wds.decode("pilrgb", handler=log_and_continue),
         wds.rename(image="jpg;png;jpeg;webp", text="txt"),
-        wds.map_dict(image=preprocess_img, text=lambda text: tokenizer(text)[0]),
+        wds.map_dict(image=preprocess_img, text=partial(process_text, tokenizer=tokenizer)),
         wds.to_tuple("image", "text"),
         wds.batched(args.batch_size, partial=not is_train)
     ])
