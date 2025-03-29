@@ -648,3 +648,9 @@ def get_model_tokenize_cfg(model):
     if vocab_size is not None:
         cfg['vocab_size'] = vocab_size
     return cfg
+
+
+def infer_model_dim(model):
+    # NOTE(ebenj): This assumes that the text encoder has an `.output_dim` which is the actual embedding
+    # dimension, and matches the visual encoder. This is true for Marqo and seems decently safe in general
+    return model.text.output_dim

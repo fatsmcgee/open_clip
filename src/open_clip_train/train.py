@@ -9,6 +9,8 @@ import torch
 import torch.nn.functional as F
 from torch.nn.parallel.distributed import DistributedDataParallel
 
+from open_clip.model import infer_model_dim
+
 try:
     import wandb
 except ImportError:
@@ -292,6 +294,8 @@ def evaluate(model, data, epoch, args, tb_writer=None, tokenizer=None):
 
                     batch_size = images.shape[0]
                     labels = torch.arange(batch_size, device=device).long()
+                    # TODO(ebenj): The validation CLIP loss computed here is based on the full embedding size,
+                    # even if the matryoshka dimensions don't include the full size
                     total_loss = (
                         F.cross_entropy(logits_per_image, labels) +
                         F.cross_entropy(logits_per_text, labels)
@@ -311,14 +315,39 @@ def evaluate(model, data, epoch, args, tb_writer=None, tokenizer=None):
                         logging.info(
                             f"Generative Loss: {cumulative_gen_loss / num_samples:.6f}\t")
 
-            val_metrics = get_clip_metrics(
-                image_features=torch.cat(all_image_features),
-                text_features=torch.cat(all_text_features),
-                logit_scale=logit_scale.cpu(),
-            )
+            if args.matryoshka_dims:
+                dims = [int(dim) for dim in args.matryoshka_dims.split(',')]
+                prefix2dim = {
+                    f"d{d}":d for d in dims
+                }
+            else:
+                prefix2dim = {
+                    "": infer_model_dim(model)
+                }
+
+            all_val_metrics = {}
+            image_features = torch.cat(all_image_features)
+            text_features = torch.cat(all_text_features)
+
+            for prefix, dim in prefix2dim.items():
+
+                # NOTE(ebenj): This assumes that the desired text/image similarity is cosine similarity
+                # rather than dot product. This is a safe assumption for both CLIP and SigLIP
+                # and is also assumed by our Matryoshka loss implementation
+                image_features_dim = F.normalize(image_features[..., :dim].contiguous(), p=2, dim=-1)
+                text_features_dim = F.normalize(text_features[..., :dim].contiguous(), p=2, dim=-1)
+
+                val_metrics = get_clip_metrics(
+                    image_features=image_features_dim,
+                    text_features=text_features_dim,
+                    logit_scale=logit_scale.cpu(),
+                    prefix=prefix
+                )
+                all_val_metrics.update(val_metrics)
+
             loss = cumulative_loss / num_samples
             metrics.update(
-                {**val_metrics, "clip_val_loss": loss.item(), "epoch": epoch, "num_samples": num_samples}
+                {**all_val_metrics, "clip_val_loss": loss.item(), "epoch": epoch, "num_samples": num_samples}
             )
             if gen_loss is not None:
                 gen_loss = cumulative_gen_loss / num_samples
@@ -357,7 +386,7 @@ def evaluate(model, data, epoch, args, tb_writer=None, tokenizer=None):
     return metrics
 
 
-def get_clip_metrics(image_features, text_features, logit_scale):
+def get_clip_metrics(image_features, text_features, logit_scale,prefix=""):
     metrics = {}
     logits_per_image = (logit_scale * image_features @ text_features.t()).detach().cpu()
     logits_per_text = logits_per_image.t().detach().cpu()
@@ -369,10 +398,10 @@ def get_clip_metrics(image_features, text_features, logit_scale):
         ranking = torch.argsort(logit, descending=True)
         preds = torch.where(ranking == ground_truth)[1]
         preds = preds.detach().cpu().numpy()
-        metrics[f"{name}_mean_rank"] = preds.mean() + 1
-        metrics[f"{name}_median_rank"] = np.floor(np.median(preds)) + 1
+        metrics[f"{prefix}{name}_mean_rank"] = preds.mean() + 1
+        metrics[f"{prefix}{name}_median_rank"] = np.floor(np.median(preds)) + 1
         for k in [1, 5, 10]:
-            metrics[f"{name}_R@{k}"] = np.mean(preds < k)
+            metrics[f"{prefix}{name}_R@{k}"] = np.mean(preds < k)
 
     return metrics
 

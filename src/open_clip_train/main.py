@@ -13,6 +13,8 @@ import numpy as np
 import torch
 from torch import optim
 
+from open_clip.model import infer_model_dim
+
 try:
     import wandb
 except ImportError:
@@ -451,6 +453,10 @@ def main(args):
         wandb.save(params_file)
         logging.debug('Finished loading wandb.')
 
+
+    output_emb_dim = infer_model_dim(model)
+    logging.info(f"Inferred model output embedding dim of: {output_emb_dim}")
+
     # Pytorch 2.0 adds '_orig_mod.' prefix to keys of state_dict() of compiled models.
     # For compatibility, we save state_dict() of the original model, which shares the
     # weights without the prefix.
@@ -474,10 +480,6 @@ def main(args):
         evaluate(model, data, start_epoch, args, tb_writer=writer, tokenizer=tokenizer)
         return
 
-    # NOTE(ebenj): This assumes that the text encoder has an `.output_dim` which is the actual embedding
-    # dimension, and matches the visual encoder. This is true for Marqo and seems decently safe in general
-    output_emb_dim = model.text.output_dim
-    logging.info(f"Inferred model output embedding dim of: {output_emb_dim}")
     loss = create_loss(args, output_emb_dim)
 
     for epoch in range(start_epoch, args.epochs):
