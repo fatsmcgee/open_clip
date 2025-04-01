@@ -127,7 +127,9 @@ class ClipLoss(nn.Module):
         
         return logits_per_image, logits_per_text
 
-    def forward(self, image_features, text_features, logit_scale, output_dict=False):
+    def forward(self, image_features, text_features, logit_scale, logit_bias=None, output_dict=False):
+        # Note that logit_bias is meaningless for CLIP, but this is a quick workaround to allow
+        # Models with SigLIP config settings to train using CLIP... simply ignores logit_bias
         device = image_features.device
         logits_per_image, logits_per_text = self.get_logits(image_features, text_features, logit_scale)
 
